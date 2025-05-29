@@ -1,0 +1,160 @@
+# IMPORTING REQUIRED PACKAGES
+import pygame
+import random
+from random import randint
+# GENERAL SETUP
+pygame.init()
+pygame.display.set_caption("GAME")
+WINDOW_WIDTH,WINDOW_HEIGHT=1280,720
+display_surface=pygame.display.set_mode((WINDOW_WIDTH,WINDOW_HEIGHT))
+running = True
+clock=pygame.time.Clock()
+# NUMBER OF MOTHS - N
+n=400 
+# LIGHT SOURCE
+light_pos=pygame.math.Vector2(WINDOW_WIDTH/2,WINDOW_HEIGHT/2)# LIGHT SOURCE PRESENT ON THE CENTRE OF THE SCREEN
+light_radius=100 # THE LIGHT RAYS EXTEND UPTO A RADIUS OF light_radius PIXELS
+# LOADING IMAGE OF MOTH
+image=pygame.image.load("moth.png").convert_alpha()
+# CHECKS FOR PERSONAL DATA-CHECKS WHETHER OR NOT THE MOTHS ARE WITHIN THE AREA OF LIGHT RAYS
+def check_personal_evidence(moth):
+    distance_to_light_source=moth.pos.distance_to(light_pos)
+    if distance_to_light_source<light_radius:
+        return 0.1
+    return 0
+# CHECKS FOR SOCIAL DATA-CHECKS FOR THE NUMBER OF MOTHS PRESENT IN ITS VISUAL RADIUS AND VISUAL FIELD 
+def check_social_evidence(moth,Moths):
+    visible_moth=0;moth_state=0
+    for other_moth in Moths:
+        if other_moth == moth:
+            continue
+        distance_vector=moth.pos-other_moth.pos
+        angle=moth.velocity.angle_to(distance_vector)
+        distance=moth.pos.distance_to(other_moth.pos)
+        if distance<moth.visual_radius and abs(angle)<moth.visual_field:
+            visible_moth+=1
+            moth_state+=moth.state
+    return 0.01*visible_moth*moth_state
+# CREATING MOTHS
+class Moth(pygame.sprite.Sprite):
+    def __init__(self,x,y,vx,vy,state):
+        pygame.sprite.Sprite.__init__(self)
+        self.pos=pygame.math.Vector2(x,y) # POSITION OF MOTH ON SCREEN
+        self.image=pygame.transform.scale(image,(20,20))
+        self.rect=self.image.get_frect(center=self.pos)
+        self.velocity=pygame.math.Vector2(vx,vy) # VELOCITY OF THE MOTH
+        self.visual_radius=100 # RADIUS UPTO WHICH THE MOTH CAN SEE
+        self.visual_field=180 # DEFINES THE EXTENT OF ITS PERIPHERAL VISION - CANNOT SEE MOTHS THAT DO NOT LIE WITHIN THIS ANGLE
+        self.state=state # DEFINES STATE-EXPLORATION,SOCIAL RELOCATION,EXPLOITATION
+        self.u=0 # TAKES CARE OF PERSONAL EVIDENCE
+        self.w=0 # TAKES CARE OF SOCIAL EVIDENCE
+        self.u_threshold=1 # MAX VALUE OF U
+        self.w_threshold=1 # MAX VALUE OF W
+    # EMPLOYES SOFT COLLISION - BASED ON THE NUMBER OF MOTHS IT IS SURROUNDED BY - IT TURNS TO AVOID THEM    
+    def avoid_collision(self,moths,padding_radius=60,limit=2):
+     left,right=0,0
+     for other_moth in moths:
+        if other_moth==self:
+            continue
+        vector=self.pos-moth.pos
+        distance=vector.length()
+        if distance>padding_radius:
+            continue
+        angle=self.velocity.angle_to(vector)
+        if angle>(self.visual_field/2):
+            continue
+        if angle<0: # MOTH PRESENT TOWARDS LEFT
+            left+=(1/(distance+1))
+        elif angle>0: # MOTH PRESENT TOWARDS RIGHT
+            right+=(1/(distance+1))
+
+     delta_angle = 0
+     if left > right:
+           delta_angle=20 
+     elif right > left:
+           delta_angle =-20
+     if delta_angle != 0:
+           self.velocity = self.velocity.rotate(delta_angle)
+     
+    # CHECKS THE STATE THE MOTH IS PRESENT IN       
+    def check_state(self,moths):
+       I=check_personal_evidence(self)
+       V=check_social_evidence(self,moths)
+       self.u+=I-0.05*(self.u-0)
+       self.w+=V-0.05*(self.w-0)
+       if self.u<self.u_threshold and self.w<self.w_threshold:
+          return 0
+       elif self.w>self.w_threshold and self.u<self.u_threshold:
+          return 1
+       return 2
+        
+    def update(self,Moths):
+        self.state=self.check_state(Moths)
+        self.avoid_collision(Moths)
+        
+        if self.state==0: # EXPLORATION
+            self.pos+=self.velocity
+            
+        elif self.state==1: # SOCIAL RELOCATION
+            v_desired=pygame.math.Vector2(0,0)
+            count=0
+            for moth in Moths:
+               distance_vector=self.pos-moth.pos
+               angle=self.velocity.angle_to(distance_vector)
+               distance=self.pos.distance_to(moth.pos)
+               if distance<self.visual_radius and abs(angle)<self.visual_field:
+                  v_desired+=moth.velocity
+                  count+=1
+            self.pos+=v_desired/count
+            
+        else: # EXPLOITATION - HEADING TOWARDS LIGHT SOURCE ON YOUR OWN
+           distance_to_light = self.pos.distance_to(light_pos)
+           direction = (light_pos - self.pos).normalize()
+           moth_already_near_light=0
+           for all_moth in Moths:
+               if (all_moth.pos.distance_to(light_pos))<light_radius:
+                   moth_already_near_light+=1
+           if moth_already_near_light<=(6.284/0.3142*light_radius):
+            if distance_to_light > light_radius:
+               self.pos += direction * self.velocity.length()
+               
+            else:
+               tangent = pygame.math.Vector2(-direction.y, direction.x)
+               self.pos+=(self.velocity.length()*tangent)
+        self.rect.center=self.pos
+            
+        if self.pos.x <= 0:
+            self.pos.x = 0
+            self.velocity.x *= -1
+        elif self.pos.x >= WINDOW_WIDTH:
+            self.pos.x = WINDOW_WIDTH
+            self.velocity.x *= -1
+
+        if self.pos.y <= 0:
+            self.pos.y = 0
+            self.velocity.y *= -1
+        elif self.pos.y >= WINDOW_HEIGHT:
+            self.pos.y = WINDOW_HEIGHT
+            self.velocity.y *= -1
+
+        self.rect.center = self.pos
+
+            
+moths=pygame.sprite.Group()
+for i in range(n):
+    moth=Moth(random.uniform(0,WINDOW_WIDTH),random.uniform(0,WINDOW_HEIGHT),random.uniform(-20,20),random.uniform(-20,20),0)
+    moths.add(moth)
+Moths=list(moths)
+
+while running:
+    display_surface.fill((0, 0, 0)) 
+    dt=clock.tick(10)/1000
+    # event loop
+    for event in pygame.event.get():
+        if event.type==pygame.QUIT:
+            running = False
+    moths.update(Moths)
+    moths.draw(display_surface)
+    pygame.display.update()
+            
+pygame.quit()

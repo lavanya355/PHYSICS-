@@ -103,7 +103,7 @@ class Moth(pygame.sprite.Sprite):
                angle=self.velocity.angle_to(distance_vector)
                distance=self.pos.distance_to(moth.pos)
                if distance<self.visual_radius and abs(angle)<self.visual_field:
-                  v_desired+=moth.velocity
+                  v_desired+=moth.velocity*moth.state
                   count+=1
             self.pos+=v_desired/count
             
